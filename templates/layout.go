@@ -1,7 +1,5 @@
 package templates
 
-import "../assets"
-
 var Layout = `<!DOCTYPE html>
 <html lang="en">
   <head>
@@ -17,7 +15,7 @@ var Layout = `<!DOCTYPE html>
       {{end}}
     }
   </script>
-    <style>` + assets.BootstrapCss + `</style>
+    <style>` + bootstrapCss + `</style>
     <title>{{.title}}</title>
   </head>
   <body>
