@@ -79,8 +79,10 @@ func NewControlPanel(config Config) *ControlPanel {
 	return cp
 }
 
-func (cc *ControlPanel) AddWidget(refresh time.Duration, cb func() (string, error)) string {
+func (cc *ControlPanel) AddWidget(refresh time.Duration, tmpl string, content func() (interface{}, error)) string {
 	wid := strings.Replace(uuid.New().String(), "-", "", -1)
+
+	widgetTemplate := template.Must(template.New(wid).Funcs(cc.templateFuncs).Parse(tmpl))
 
 	cc.widgetFunctions[wid] = template.JS(fmt.Sprintf(`function widget%s() {
 					fetch('%s')
@@ -98,11 +100,18 @@ func (cc *ControlPanel) AddWidget(refresh time.Duration, cb func() (string, erro
 				widget%s();
 	`, wid, wid, wid, wid, refresh.Nanoseconds()/1000000, wid))
 	cc.router.GET(wid, func(c *gin.Context) {
-		if content, err := cb(); err == nil {
-			c.Data(200, "text/html; charset=utf-8", []byte(content))
-		} else {
-			c.Data(500, "text/html; charset=utf-8", []byte(fmt.Sprintf(`<div class="alert alert-danger" role="alert">Error: %s</div>`, err.Error())))
+		var data interface{}
+		if content != nil {
+			var err error
+			data, err = content()
+			if err != nil {
+				c.Data(500, "text/html; charset=utf-8", []byte(fmt.Sprintf(`<div class="alert alert-danger" role="alert">Error: %s</div>`, err.Error())))
+				return
+			}
 		}
+		out := bytes.Buffer{}
+		widgetTemplate.Execute(&out, data)
+		c.Data(200, "text/html; charset=utf-8", []byte(out.String()))
 	})
 	return wid
 }
@@ -111,15 +120,24 @@ func (cc *ControlPanel) AddWidgetToHeader(wid string) {
 	cc.headerWidgets = append(cc.headerWidgets, wid)
 }
 
-func (cc *ControlPanel) AddContentPage(url string, menu string, tmpl string, content func() interface{}) {
+func (cc *ControlPanel) AddContentPage(url string, menu string, tmpl string, content func() (interface{}, error)) {
 	if menu != "" {
 		cc.menu = append(cc.menu, menuItem{url, menu})
 	}
 	pageTemplate := template.Must(template.New(url).Funcs(cc.templateFuncs).Parse(tmpl))
 
 	cc.router.GET(url, func(c *gin.Context) {
+		var data interface{}
+		if content != nil {
+			var err error
+			data, err = content()
+			if err != nil {
+				c.Data(500, "text/html; charset=utf-8", []byte(fmt.Sprintf(`<div class="alert alert-danger" role="alert">Error: %s</div>`, err.Error())))
+				return
+			}
+		}
 		out := bytes.Buffer{}
-		pageTemplate.Execute(&out, content())
+		pageTemplate.Execute(&out, data)
 		cc.render(c, template.HTML(out.String()))
 	})
 }
