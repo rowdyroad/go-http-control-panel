@@ -2,8 +2,10 @@ package copan
 
 import (
 	"bytes"
+	"context"
 	"fmt"
 	"html/template"
+	"net/http"
 	"strings"
 	"time"
 
@@ -16,8 +18,8 @@ import (
 )
 
 type User struct {
-	Username string
-	Password string
+	Username string `yaml:"username" json:"username"`
+	Password string `yaml:"password" htmlForm:"type: password"`
 }
 
 type Config struct {
@@ -33,23 +35,28 @@ type menuItem struct {
 
 type ControlPanel struct {
 	config          Config
-	route           *gin.Engine
+	router          *gin.Engine
 	menu            []menuItem
 	widgetFunctions map[string]interface{}
 	headerWidgets   []string
 	templateFuncs   template.FuncMap
+	server          *http.Server
 }
 
 func NewControlPanel(config Config) *ControlPanel {
-	route := gin.Default()
+	router := gin.Default()
 
 	cp := &ControlPanel{
 		config,
-		route,
+		router,
 		[]menuItem{},
 		map[string]interface{}{},
 		[]string{},
 		template.FuncMap{},
+		&http.Server{
+			Addr:    config.Listen,
+			Handler: router,
+		},
 	}
 
 	cp.templateFuncs["widget"] = func(id string) interface{} {
@@ -64,11 +71,11 @@ func NewControlPanel(config Config) *ControlPanel {
 		for _, user := range config.Users {
 			accounts[user.Username] = user.Password
 		}
-		cp.route.Use(gin.BasicAuth(accounts))
+		cp.router.Use(gin.BasicAuth(accounts))
 	}
 
 	layout := template.Must(template.New("layout").Funcs(cp.templateFuncs).Parse(templates.Layout))
-	cp.route.SetHTMLTemplate(layout)
+	cp.router.SetHTMLTemplate(layout)
 	return cp
 }
 
@@ -90,7 +97,7 @@ func (cc *ControlPanel) AddWidget(refresh time.Duration, cb func() (string, erro
 				setInterval(widget%s, %d);
 				widget%s();
 	`, wid, wid, wid, wid, refresh.Nanoseconds()/1000000, wid))
-	cc.route.GET(wid, func(c *gin.Context) {
+	cc.router.GET(wid, func(c *gin.Context) {
 		if content, err := cb(); err == nil {
 			c.Data(200, "text/html; charset=utf-8", []byte(content))
 		} else {
@@ -110,7 +117,7 @@ func (cc *ControlPanel) AddContentPage(url string, menu string, tmpl string, con
 	}
 	pageTemplate := template.Must(template.New(url).Funcs(cc.templateFuncs).Parse(tmpl))
 
-	cc.route.GET(url, func(c *gin.Context) {
+	cc.router.GET(url, func(c *gin.Context) {
 		out := bytes.Buffer{}
 		pageTemplate.Execute(&out, content())
 		cc.render(c, template.HTML(out.String()))
@@ -131,7 +138,7 @@ func (cc *ControlPanel) render(c *gin.Context, content interface{}) {
 func (cc *ControlPanel) showForm(url string, menu string, data interface{}, c *gin.Context) {
 	x := bytes.Buffer{}
 	if forms.MakeHTML(data, &x, nil) {
-		cc.render(c, template.HTML("<h1>Settings</h1>"+x.String()))
+		cc.render(c, template.HTML(x.String()))
 	}
 }
 
@@ -140,11 +147,11 @@ func (cc *ControlPanel) AddFormPage(url string, menu string, data interface{}, c
 		cc.menu = append(cc.menu, menuItem{url, menu})
 	}
 
-	cc.route.GET(url, func(c *gin.Context) {
+	cc.router.GET(url, func(c *gin.Context) {
 		cc.showForm(url, menu, data, c)
 	})
 
-	cc.route.POST(url, func(c *gin.Context) {
+	cc.router.POST(url, func(c *gin.Context) {
 		c.Request.ParseForm()
 		ret := forms.ParseForm(c.Request.Form, data)
 		if cb(ret) {
@@ -155,5 +162,11 @@ func (cc *ControlPanel) AddFormPage(url string, menu string, data interface{}, c
 }
 
 func (cc *ControlPanel) Run() {
-	cc.route.Run(cc.config.Listen)
+	if err := cc.server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+		panic(err)
+	}
+}
+
+func (cc *ControlPanel) Stop() {
+	cc.server.Shutdown(context.Background())
 }
