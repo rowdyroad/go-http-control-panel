@@ -9,7 +9,7 @@ import (
 
 	"github.com/google/uuid"
 
-	"./templates"
+	"github.com/rowdyroad/go-http-control-panel/templates"
 
 	"github.com/gin-gonic/gin"
 	forms "github.com/rowdyroad/go-web-forms"
