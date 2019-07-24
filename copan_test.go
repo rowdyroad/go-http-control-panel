@@ -1,7 +1,6 @@
 package copan
 
 import (
-	"fmt"
 	"log"
 	"testing"
 	"time"
@@ -17,32 +16,6 @@ type Struct struct {
 	Ints    []int
 	Floats  []float64
 }
-
-// type Settings struct {
-// 	Struct
-
-// 	StructOne Struct
-// 	Structs   []Struct
-
-// 	Textarea    string `htmlForm:"type: textarea; rows: 10"`
-// 	CustomLabel string `htmlForm:"label: Custom; description: Custom Description"`
-
-// 	ReadonlyString string  `htmlForm:"readonly: true"`
-// 	ReadonlyInt    int     `htmlForm:"readonly: true"`
-// 	ReadonlyFloat  float64 `htmlForm:"readonly: true"`
-// 	ReadonlyBool   bool    `htmlForm:"readonly: true"`
-
-// 	ReadonlyStrings []string  `htmlForm:"readonly: true"`
-// 	ReadonlyInts    []int     `htmlForm:"readonly: true"`
-// 	ReadonlyFloats  []float64 `htmlForm:"readonly: true"`
-// 	ReadonlyBools   []bool    `htmlForm:"readonly: true"`
-
-// 	ReadonlyStruct  Struct   `htmlForm:"readonly: true"`
-// 	ReadonlyStructs []Struct `htmlForm:"itemLabel: Struct"`
-
-// 	ReadonlyTextarea    string `htmlForm:"type: textarea; rows: 20; readonly: true"`
-// 	ReadonlyCustomLabel string `htmlForm:"label: Custom; description: Custom Description; readonly: true"`
-// }
 
 func TestMain(t *testing.T) {
 	cp := NewControlPanel(Config{
@@ -67,19 +40,19 @@ func TestMain(t *testing.T) {
 		Floats:  []float64{1.2, 1.5, 2.5},
 		Bools:   []bool{true, true, false},
 	}
-	wid := cp.AddWidget(time.Second, func() (string, error) {
-		return fmt.Sprintf("<div>%v</div>", time.Now().Format("15:04:05")), nil
+	wid := cp.AddWidget(time.Second, `<div>{{.}}</div>`, func() (interface{}, error) {
+		return time.Now().Format("15:04:05"), nil
 	})
-	cp.AddWidgetToHeader(wid)
 
-	cp.AddContentPage("/", "Home", "<h1>Hello {{widget .wid}}</h1>", func() interface{} {
-		return map[string]string{
-			"wid": wid,
-		}
-	})
-	cp.AddFormPage("/settings", "Settings", s, func(data interface{}) bool {
-		log.Println("DATA:", data)
+	fid := cp.AddForm(s, func(data interface{}) bool {
+		log.Println("HHH", data)
 		return true
+	})
+
+	cp.AddElementToHeader(wid)
+
+	cp.AddContentPage("/", "Home", "<h1>Hello {{element .widget}} {{element .form}}</h1>", func() (interface{}, error) {
+		return map[string]string{"widget": wid, "form": fid}, nil
 	})
 
 	cp.Run()

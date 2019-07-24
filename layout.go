@@ -1,6 +1,6 @@
-package templates
+package copan
 
-var Layout = `<!DOCTYPE html>
+var layout = `<!DOCTYPE html>
 <html lang="en">
   <head>
     <meta charset="utf-8" />
@@ -9,22 +9,41 @@ var Layout = `<!DOCTYPE html>
       content="width=device-width, initial-scale=1, shrink-to-fit=no"
   />
   <script>
-    window.onload = function(e){
-      {{range .widgetFunctions}}
-        {{.}}
-      {{end}}
+    function loadElement(id) {
+      fetch(id)
+        .then(function(response) {
+          return response.text()
+        })
+        .then(function(html) {
+          var widgets = document.getElementsByClassName('element-' + id);
+          for (var i = 0; i < widgets.length; i++) {
+            var widget = widgets[i];
+            while (widget.firstChild) {
+              widget.removeChild(widget.firstChild);
+            }
+            var el = document.createElement('div');
+            el.innerHTML = html;
+            widget.appendChild(el);
+            var scripts = el.querySelectorAll('script');
+            for (var j = 0; j < scripts.length; j++) {
+              if (scripts[j].type === '' || scripts[j].type === 'text/javascript') {
+                eval(scripts[j].text);
+              }
+            }
+          }
+        })
     }
   </script>
-    <style>` + bootstrapCss + `</style>
+    <style>` + bootstrapCSS + `</style>
     <title>{{.title}}</title>
   </head>
   <body>
     <nav class="navbar navbar-expand-lg navbar-dark bg-dark navbar-fixed-top">
       <a href="{{.homeUrl}}" class="navbar-brand">{{.title}}</a>
       <ul class="navbar-nav flex-row ml-md-auto d-none d-md-flex" style="color:white">
-        {{range .headerWidgets}}
+        {{range .headerElements}}
           <li class="nav-item">
-            {{widget .}}
+            {{element .}}
           </li>
         {{end}}
       </ul>

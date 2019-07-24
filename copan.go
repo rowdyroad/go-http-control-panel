@@ -3,15 +3,16 @@ package copan
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
 	"html/template"
+	"log"
 	"net/http"
+	"reflect"
 	"strings"
 	"time"
 
 	"github.com/google/uuid"
-
-	"github.com/rowdyroad/go-http-control-panel/templates"
 
 	"github.com/gin-gonic/gin"
 	forms "github.com/rowdyroad/go-web-forms"
@@ -34,13 +35,13 @@ type menuItem struct {
 }
 
 type ControlPanel struct {
-	config          Config
-	router          *gin.Engine
-	menu            []menuItem
-	widgetFunctions map[string]interface{}
-	headerWidgets   []string
-	templateFuncs   template.FuncMap
-	server          *http.Server
+	config         Config
+	router         *gin.Engine
+	menu           []menuItem
+	elements       map[string]string
+	headerElements []string
+	templateFuncs  template.FuncMap
+	server         *http.Server
 }
 
 func NewControlPanel(config Config) *ControlPanel {
@@ -50,7 +51,7 @@ func NewControlPanel(config Config) *ControlPanel {
 		config,
 		router,
 		[]menuItem{},
-		map[string]interface{}{},
+		map[string]string{},
 		[]string{},
 		template.FuncMap{},
 		&http.Server{
@@ -59,9 +60,9 @@ func NewControlPanel(config Config) *ControlPanel {
 		},
 	}
 
-	cp.templateFuncs["widget"] = func(id string) interface{} {
-		if _, ok := cp.widgetFunctions[id]; ok {
-			return template.HTML(fmt.Sprintf(`<div class="widget-%s"></div>`, id))
+	cp.templateFuncs["element"] = func(id string) interface{} {
+		if data, ok := cp.elements[id]; ok {
+			return template.HTML(data)
 		}
 		return ""
 	}
@@ -74,7 +75,7 @@ func NewControlPanel(config Config) *ControlPanel {
 		cp.router.Use(gin.BasicAuth(accounts))
 	}
 
-	layout := template.Must(template.New("layout").Funcs(cp.templateFuncs).Parse(templates.Layout))
+	layout := template.Must(template.New("layout").Funcs(cp.templateFuncs).Parse(layout))
 	cp.router.SetHTMLTemplate(layout)
 	return cp
 }
@@ -84,21 +85,22 @@ func (cc *ControlPanel) AddWidget(refresh time.Duration, tmpl string, content fu
 
 	widgetTemplate := template.Must(template.New(wid).Funcs(cc.templateFuncs).Parse(tmpl))
 
-	cc.widgetFunctions[wid] = template.JS(fmt.Sprintf(`function widget%s() {
-					fetch('%s')
-						.then(function(response) {
-							return response.text()
-						})
-						.then(function(html) {
-							var widgets = document.getElementsByClassName('widget-%s');
-							for (var i = 0; i < widgets.length; i++) {
-								widgets[i].innerHTML = html;
-							}
-						})
-				}
-				setInterval(widget%s, %d);
-				widget%s();
-	`, wid, wid, wid, wid, refresh.Nanoseconds()/1000000, wid))
+	cc.elements[wid] = fmt.Sprintf(`<div class="element-%s"></div>
+		<script>
+			if (!window.elements) {
+				window.elements = {};
+			}
+			if (!window.elements['%s']) {
+				window.elements['%s'] = true;
+				document.addEventListener("DOMContentLoaded", function() {
+					setInterval(function() {
+						loadElement('%s');
+					}, %d);
+					loadElement('%s');
+				});
+			}
+		</script>`, wid, wid, wid, wid, refresh.Nanoseconds()/1000000, wid)
+
 	cc.router.GET(wid, func(c *gin.Context) {
 		var data interface{}
 		if content != nil {
@@ -116,8 +118,39 @@ func (cc *ControlPanel) AddWidget(refresh time.Duration, tmpl string, content fu
 	return wid
 }
 
-func (cc *ControlPanel) AddWidgetToHeader(wid string) {
-	cc.headerWidgets = append(cc.headerWidgets, wid)
+func (cc *ControlPanel) AddForm(data interface{}, callback func(data interface{}) bool) string {
+	wid := strings.Replace(uuid.New().String(), "-", "", -1)
+	cc.elements[wid] = fmt.Sprintf(`<div class="element-%s"></div>
+		<script>
+			document.addEventListener("DOMContentLoaded", function() {
+				loadElement('%s');
+			});
+		</script>`, wid, wid)
+
+	cc.router.GET(wid, func(c *gin.Context) {
+		log.Println("ret", data)
+		forms.MakeHTML(wid, data, c.Writer)
+	})
+
+	cc.router.POST(wid, func(c *gin.Context) {
+		srcBts, _ := json.Marshal(data)
+		dst := reflect.New(reflect.TypeOf(data)).Interface()
+		json.Unmarshal(srcBts, dst)
+		if err := c.Bind(dst); err != nil {
+			log.Println("Error:", err)
+			return
+		}
+		dst = reflect.ValueOf(dst).Elem().Interface()
+		if callback(dst) {
+			data = dst
+		}
+	})
+
+	return wid
+}
+
+func (cc *ControlPanel) AddElementToHeader(wid string) {
+	cc.headerElements = append(cc.headerElements, wid)
 }
 
 func (cc *ControlPanel) AddContentPage(url string, menu string, tmpl string, content func() (interface{}, error)) {
@@ -144,38 +177,12 @@ func (cc *ControlPanel) AddContentPage(url string, menu string, tmpl string, con
 
 func (cc *ControlPanel) render(c *gin.Context, content interface{}) {
 	c.HTML(200, "layout", gin.H{
-		"menu":            cc.menu,
-		"title":           cc.config.Title,
-		"content":         content,
-		"headerWidgets":   cc.headerWidgets,
-		"widgetFunctions": cc.widgetFunctions,
-		"location":        c.Request.URL.Path,
-	})
-}
-
-func (cc *ControlPanel) showForm(url string, menu string, data interface{}, c *gin.Context) {
-	x := bytes.Buffer{}
-	if forms.MakeHTML(data, &x, nil) {
-		cc.render(c, template.HTML(x.String()))
-	}
-}
-
-func (cc *ControlPanel) AddFormPage(url string, menu string, data interface{}, cb func(data interface{}) bool) {
-	if menu != "" {
-		cc.menu = append(cc.menu, menuItem{url, menu})
-	}
-
-	cc.router.GET(url, func(c *gin.Context) {
-		cc.showForm(url, menu, data, c)
-	})
-
-	cc.router.POST(url, func(c *gin.Context) {
-		c.Request.ParseForm()
-		ret := forms.ParseForm(c.Request.Form, data)
-		if cb(ret) {
-			data = ret
-		}
-		cc.showForm(url, menu, data, c)
+		"menu":           cc.menu,
+		"title":          cc.config.Title,
+		"content":        content,
+		"headerElements": cc.headerElements,
+		"elements":       cc.elements,
+		"location":       c.Request.URL.Path,
 	})
 }
 
