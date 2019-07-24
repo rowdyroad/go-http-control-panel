@@ -128,7 +128,6 @@ func (cc *ControlPanel) AddForm(data interface{}, callback func(data interface{}
 		</script>`, wid, wid)
 
 	cc.router.GET(wid, func(c *gin.Context) {
-		log.Println("ret", data)
 		forms.MakeHTML(wid, data, c.Writer)
 	})
 
