@@ -152,20 +152,22 @@ func (cc *ControlPanel) AddElementToHeader(wid string) {
 	cc.headerElements = append(cc.headerElements, wid)
 }
 
-func (cc *ControlPanel) AddContentPage(url string, menu string, tmpl string, content func() (interface{}, error)) {
+func (cc *ControlPanel) AddContentPage(url string, menu string, tmpl string, content interface{}) {
 	if menu != "" {
 		cc.menu = append(cc.menu, menuItem{url, menu})
 	}
 	pageTemplate := template.Must(template.New(url).Funcs(cc.templateFuncs).Parse(tmpl))
 
 	cc.router.GET(url, func(c *gin.Context) {
-		var data interface{}
+		data := content
 		if content != nil {
 			var err error
-			data, err = content()
-			if err != nil {
-				c.Data(500, "text/html; charset=utf-8", []byte(fmt.Sprintf(`<div class="alert alert-danger" role="alert">Error: %s</div>`, err.Error())))
-				return
+			if cb, ok := content.(func() (interface{}, error)); ok {
+				data, err = cb()
+				if err != nil {
+					c.Data(500, "text/html; charset=utf-8", []byte(fmt.Sprintf(`<div class="alert alert-danger" role="alert">Error: %s</div>`, err.Error())))
+					return
+				}
 			}
 		}
 		out := bytes.Buffer{}

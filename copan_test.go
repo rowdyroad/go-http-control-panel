@@ -55,6 +55,8 @@ func TestMain(t *testing.T) {
 		return map[string]string{"widget": wid, "form": fid}, nil
 	})
 
+	cp.AddContentPage("/home", "Home", "<h1>Hello {{.}}</h1>", "World")
+
 	cp.Run()
 
 }
