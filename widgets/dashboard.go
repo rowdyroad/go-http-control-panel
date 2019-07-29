@@ -90,6 +90,7 @@ func (cp *Dashboard) Clear() *Dashboard {
 	cp.Lock()
 	defer cp.Unlock()
 	cp.values = []value{}
+	cp.keys = map[string]int{}
 	return cp
 }
 
