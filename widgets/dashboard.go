@@ -70,14 +70,15 @@ func (cp *Dashboard) Set(pairs ...interface{}) *Dashboard {
 	return cp
 }
 
-func (cp *Dashboard) Unset(names ...string) *Dashboard {
+func (cp *Dashboard) Unset(keys ...string) *Dashboard {
 	cp.Lock()
 	defer cp.Unlock()
-	for _, name := range names {
-		if idx, has := cp.keys[name]; has {
+	for _, key := range keys {
+		if idx, has := cp.keys[key]; has {
 			cp.values = append(cp.values[:idx], cp.values[idx+1:]...)
+			delete(cp.keys, key)
 			for key, i := range cp.keys {
-				if i > idx {
+				if i >= idx {
 					cp.keys[key] = i - 1
 				}
 			}
