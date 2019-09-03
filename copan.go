@@ -26,7 +26,7 @@ type User struct {
 type Config struct {
 	Title  string `yaml:"title" json:"title"`
 	Listen string `yaml:"listen" json:"listen"`
-	Users  []User `yaml:"users" json:"users"`
+	Users  []User `yaml:"users" json:"users" htmlForm:"itemTemplate: '{{.Username}}'"`
 }
 
 type menuItem struct {
